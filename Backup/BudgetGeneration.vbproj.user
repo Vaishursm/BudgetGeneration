@@ -1,5 +1,0 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup>
-    <ReferencePath>J:\ExcelmacroProject\BudgetGeneration\BudgetGeneration\obj\Debug\;H:\BudgetGeneration-ver20(Latest)\BudgetGeneration\bin\Debug\</ReferencePath>
-  </PropertyGroup>
-</Project>
