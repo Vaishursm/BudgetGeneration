@@ -4,7 +4,7 @@ import './styles.css';
 
 function App() {
   return (
-    <div className="app-container">
+    <div className="app-container mt-2">
       <StartScreen />
     </div>
   );
