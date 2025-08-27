@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { FolderOpen, Plus, Save } from "lucide-react"
+import { FolderOpen, Plus, Save, FileSpreadsheet } from "lucide-react"
+import * as XLSX from "xlsx"
 
 interface Project {
   id: number
@@ -34,6 +35,7 @@ export function ProjectDetailsForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [passwordDialogMode, setPasswordDialogMode] = useState<"create" | "load">("create")
+  const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null)
   const { toast } = useToast()
 
   const [formData, setFormData] = useState({
@@ -47,7 +49,6 @@ export function ProjectDetailsForm() {
     workbook_location: "",
   })
 
-  // Load existing projects on component mount
   useEffect(() => {
     loadProjects()
   }, [])
@@ -135,7 +136,6 @@ export function ProjectDetailsForm() {
   }
 
   const handleSaveAndProceed = () => {
-    // Validate form
     if (!formData.project_name || !formData.client_name || !formData.start_date || !formData.end_date) {
       toast({
         title: "Validation Error",
@@ -145,7 +145,6 @@ export function ProjectDetailsForm() {
       return
     }
 
-    // Validate dates
     const startDate = new Date(formData.start_date)
     const endDate = new Date(formData.end_date)
     const today = new Date()
@@ -223,6 +222,119 @@ export function ProjectDetailsForm() {
     }
   }
 
+  const handleBrowseFolder = async () => {
+    try {
+      if ("showDirectoryPicker" in window) {
+        const handle = await (window as any).showDirectoryPicker()
+        setDirectoryHandle(handle)
+        setFormData({ ...formData, workbook_location: handle.name })
+        toast({
+          title: "Folder Selected",
+          description: `Selected folder: ${handle.name}`,
+        })
+      } else {
+        toast({
+          title: "Not Supported",
+          description: "Your browser doesn't support folder selection. Please enter the path manually.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        toast({
+          title: "Error",
+          description: "Failed to select folder.",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+
+  const handleCreateExcelFile = async () => {
+    if (!formData.workbook_name || !formData.workbook_location) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both workbook name and location.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const workbook = XLSX.utils.book_new()
+
+      const budgetData = [
+        ["Budget Item", "Category", "Planned Amount", "Actual Amount", "Variance"],
+        ["Labor Costs", "Personnel", 50000, 0, 0],
+        ["Materials", "Supplies", 25000, 0, 0],
+        ["Equipment", "Assets", 15000, 0, 0],
+        ["Overhead", "Administrative", 10000, 0, 0],
+        ["Contingency", "Risk Management", 5000, 0, 0],
+        ["", "", "", "", ""],
+        ["Total Budget", "", "=SUM(C2:C6)", "=SUM(D2:D6)", "=D8-C8"],
+      ]
+
+      const worksheet = XLSX.utils.aoa_to_sheet(budgetData)
+
+      worksheet["!cols"] = [{ width: 20 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }]
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Budget")
+
+      const fileName = formData.workbook_name.endsWith(".xlsx")
+        ? formData.workbook_name
+        : `${formData.workbook_name}.xlsx`
+
+      if (directoryHandle && "showDirectoryPicker" in window) {
+        try {
+          const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true })
+          const writable = await fileHandle.createWritable()
+          const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+          await writable.write(buffer)
+          await writable.close()
+
+          toast({
+            title: "Excel File Created",
+            description: `${fileName} has been created in the selected folder.`,
+          })
+        } catch (error) {
+          const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = url
+          a.download = fileName
+          a.click()
+          URL.revokeObjectURL(url)
+
+          toast({
+            title: "Excel File Downloaded",
+            description: `${fileName} has been downloaded to your default downloads folder.`,
+          })
+        }
+      } else {
+        const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = fileName
+        a.click()
+        URL.revokeObjectURL(url)
+
+        toast({
+          title: "Excel File Downloaded",
+          description: `${fileName} has been downloaded to your default downloads folder.`,
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create Excel file.",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto">
@@ -233,7 +345,6 @@ export function ProjectDetailsForm() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Project Selection */}
             <div className="space-y-2">
               <Label htmlFor="project-selection">Project Selection</Label>
               <Select onValueChange={handleProjectSelection}>
@@ -259,7 +370,6 @@ export function ProjectDetailsForm() {
               </Select>
             </div>
 
-            {/* Project Details Form */}
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="project_name">Project Name *</Label>
@@ -338,17 +448,43 @@ export function ProjectDetailsForm() {
 
               <div className="space-y-2">
                 <Label htmlFor="workbook_location">Workbook Save Location</Label>
-                <Input
-                  id="workbook_location"
-                  value={formData.workbook_location}
-                  onChange={(e) => setFormData({ ...formData, workbook_location: e.target.value })}
-                  placeholder="Enter save location path"
-                  disabled={!isNewProject && selectedProject !== ""}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="workbook_location"
+                    value={formData.workbook_location}
+                    onChange={(e) => setFormData({ ...formData, workbook_location: e.target.value })}
+                    placeholder="Enter save location path or browse for folder"
+                    disabled={!isNewProject && selectedProject !== ""}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleBrowseFolder}
+                    disabled={!isNewProject && selectedProject !== ""}
+                    className="px-3 bg-transparent"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
+
+              {formData.workbook_name && formData.workbook_location && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleCreateExcelFile}
+                    disabled={!isNewProject && selectedProject !== ""}
+                    className="px-6"
+                  >
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Create Excel Workbook
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {/* Save & Proceed Button */}
             <div className="flex justify-center pt-4">
               <Button onClick={handleSaveAndProceed} size="lg" className="px-8">
                 <Save className="mr-2 h-4 w-4" />
@@ -358,7 +494,6 @@ export function ProjectDetailsForm() {
           </CardContent>
         </Card>
 
-        {/* Password Dialog */}
         <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
           <DialogContent>
             <DialogHeader>
