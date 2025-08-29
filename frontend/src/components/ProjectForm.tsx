@@ -8,6 +8,7 @@ import {
   Select,
   message,
   notification,
+  Modal,
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
@@ -15,6 +16,7 @@ import * as yup from "yup";
 import { yupResolver } from "@hookform/resolvers/yup";
 import dayjs, { Dayjs } from "dayjs";
 import axios from "axios";
+import { hashPassword } from "../utils/hashpassword";
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -88,9 +90,20 @@ export default function ProjectForm() {
     Record<string, ProjectFormValues>
   >({});
   const [api, contextHolder] = notification.useNotification();
+  const [isPasswordModalOpen, setPasswordModalOpen] = useState(false);
+  const [modalPassword, setModalPassword] = useState("");
+  const [pendingData, setPendingData] = useState<ProjectFormValues | null>(
+    null
+  );
 
   const openNotification = (
-    placement: "topLeft" | "topRight" | "bottomLeft" | "bottomRight" | "top" | "bottom",
+    placement:
+      | "topLeft"
+      | "topRight"
+      | "bottomLeft"
+      | "bottomRight"
+      | "top"
+      | "bottom",
     description: string,
     message: string,
     type: "success" | "error" | "warning" | "info"
@@ -100,7 +113,7 @@ export default function ProjectForm() {
       description,
       placement,
       duration: 3,
-      showProgress :true,
+      showProgress: true,
       pauseOnHover: true,
       closeIcon: true,
     });
@@ -176,31 +189,50 @@ export default function ProjectForm() {
     //eslint-disable-next-line
   }, []);
 
-  const onSubmit: SubmitHandler<ProjectFormValues> = async (data) => {
+  const handlePasswordConfirm = async () => {
+    if (!modalPassword) {
+      message.error("Password is required");
+      return;
+    }
+
+    if (!pendingData) return;
+    const hashed = await hashPassword(modalPassword);
     try {
       if (isNewProject) {
         // POST request to create a new project
         await axios.post("http://localhost:5000/projects", {
-          ...data,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
+          ...pendingData,
+          password: hashed, // ✅ include password
+          startDate: pendingData.startDate?.toISOString(),
+          endDate: pendingData.endDate?.toISOString(),
         });
-        openNotification("top", "Project updated successfully!", "Success", "success");
+        openNotification(
+          "top",
+          "Project created successfully!",
+          "Success",
+          "success"
+        );
         reset({ chooseProject: "new" });
-        setIsNewProject(true);  
+        setIsNewProject(true);
       } else {
         // PUT request to update existing project
-        console.log(data)
-        const projectId = data.chooseProject?.replace("project", "");
+        const projectId = pendingData.chooseProject?.replace("project", "");
         await axios.put(`http://localhost:5000/projects/${projectId}`, {
-          ...data,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
+          ...pendingData,
+          password: hashed, // ✅ include password
+          startDate: pendingData.startDate?.toISOString(),
+          endDate: pendingData.endDate?.toISOString(),
         });
-        openNotification("top", "Project updated successfully!", "Success", "success");
+        openNotification(
+          "top",
+          "Project updated successfully!",
+          "Success",
+          "success"
+        );
         reset({ chooseProject: "new" });
         setIsNewProject(true);
       }
+
       // Refresh projects list
       const res = await axios.get("http://localhost:5000/projects");
       const projectsData: Record<string, ProjectFormValues> = {};
@@ -223,21 +255,34 @@ export default function ProjectForm() {
       setExistingProjects(projectsData);
       setIsNewProject(true);
     } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          // ✅ err is AxiosError here
-          openNotification(
-            "top",
-            err.response?.data?.error || err.message || "Failed to save project",
-            "Error",
-            "error"
-          );
-        } else if (err instanceof Error) {
-          // ✅ plain error
-          openNotification("top", err.message, "Error", "error");
-        } else {
-          openNotification("top", "An unexpected error occurred", "Error", "error");
-        }
+      if (axios.isAxiosError(err)) {
+        openNotification(
+          "top",
+          err.response?.data?.error || err.message || "Failed to save project",
+          "Error",
+          "error"
+        );
+      } else if (err instanceof Error) {
+        openNotification("top", err.message, "Error", "error");
+      } else {
+        openNotification(
+          "top",
+          "An unexpected error occurred",
+          "Error",
+          "error"
+        );
+      }
     }
+
+    // cleanup modal + state
+    setPasswordModalOpen(false);
+    setModalPassword("");
+    setPendingData(null);
+  };
+
+  const onSubmit: SubmitHandler<ProjectFormValues> = async (data) => {
+    setPendingData(data);
+    setPasswordModalOpen(true); // 🔹 ask for password first
   };
 
   return (
@@ -458,7 +503,7 @@ export default function ProjectForm() {
             control={control}
             render={({ field }) => (
               <InputNumber
-              disabled={!isNewProject}
+                disabled={!isNewProject}
                 {...field}
                 min={0}
                 step={0.01}
@@ -521,25 +566,37 @@ export default function ProjectForm() {
                   <p style={{ color: "red" }}>{errors.filePath?.message}</p>
                 </div>
 
+                {/* inside the Controller render for filePath */}
                 <Button
                   icon={<UploadOutlined />}
                   disabled={!isNewProject}
                   className="browse-btn"
                   onClick={async () => {
                     try {
-                      // @ts-expect-error not typed yet
-                      const dirHandle = await window.showDirectoryPicker();
-                      field.onChange(dirHandle.name + "/");
-                      openNotification("top", "Folder selected successfully!", "Success", "success");
-                    } catch (error: unknown) {
-                      if (error instanceof Error) {
-                        openNotification("top", error.message, "Error", "error");
-                      } else {
-                        openNotification("top", "An unexpected error occurred", "Error", "error");
+                      // ask main to show save dialog so user can pick exact file like D:/abc/test.xlsx
+                      const picked = await window.electronAPI.saveFileDialog({
+                        defaultPath: "workbook.xlsx",
+                      });
+                      if (picked) {
+                        field.onChange(picked);
+                        openNotification(
+                          "top",
+                          "File selected: " + picked,
+                          "Success",
+                          "success"
+                        );
                       }
+                    } catch (error) {
+                      console.error(error);
+                      openNotification(
+                        "top",
+                        "Failed to open dialog",
+                        "Error",
+                        "error"
+                      );
                     }
                   }}
-                  >
+                >
                   Browse
                 </Button>
               </div>
@@ -554,6 +611,23 @@ export default function ProjectForm() {
           </Button>
         </Form.Item>
       </Form>
+      <Modal
+        title={
+          isNewProject
+            ? "Set a password for this project"
+            : "Enter password to update project"
+        }
+        open={isPasswordModalOpen}
+        onCancel={() => setPasswordModalOpen(false)}
+        onOk={handlePasswordConfirm}
+      >
+        <Input.Password
+          placeholder={isNewProject ? "Create password" : "Enter password"}
+          value={modalPassword}
+          onChange={(e) => setModalPassword(e.target.value)}
+          onPressEnter={handlePasswordConfirm}
+        />
+      </Modal>
     </div>
   );
 }

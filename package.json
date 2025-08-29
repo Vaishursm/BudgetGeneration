@@ -1,0 +1,33 @@
+{
+  "name": "budget-electron",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "postinstall": "cd frontend && npm install && cd ../backend && npm install",
+    "start": "concurrently \"npm run backend\" \"npm run frontend\" \"npm run electron:dev\"",
+    "frontend": "cd frontend && npm run start",
+    "backend": "cd backend && npm run start",
+    "electron:dev": "wait-on http://localhost:3000 && electron .",
+    "build:frontend": "cd frontend && npm run build && cp -r frontend/dist ../frontend-build",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.0.0",
+    "concurrently": "^7.0.0",
+    "wait-on": "^6.0.0"
+  },
+  "build": {
+    "appId": "com.example.budget",
+    "files": [
+      "main.js",
+      "preload.js",
+      "frontend-build/**",
+      "backend/**",
+      "node_modules/**"
+    ],
+    "extraResources": [
+      "backend/**"
+    ]
+  }
+}
