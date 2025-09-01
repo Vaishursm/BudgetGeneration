@@ -7,6 +7,10 @@
   text-align: center;
 }
 
+.ant-layout-header{
+  height: auto;
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;

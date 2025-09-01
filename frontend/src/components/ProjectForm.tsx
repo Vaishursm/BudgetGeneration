@@ -17,6 +17,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import dayjs, { Dayjs } from "dayjs";
 import axios from "axios";
 import { hashPassword } from "../utils/hashpassword";
+import {useNavigate} from "react-router-dom";
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -95,6 +96,7 @@ export default function ProjectForm() {
   const [pendingData, setPendingData] = useState<ProjectFormValues | null>(
     null
   );
+  const navigate = useNavigate();
 
   const openNotification = (
     placement:
@@ -214,6 +216,7 @@ export default function ProjectForm() {
         );
         reset({ chooseProject: "new" });
         setIsNewProject(true);
+        navigate("/mainpage")
       } else {
         // PUT request to update existing project
         const projectId = pendingData.chooseProject?.replace("project", "");
@@ -254,11 +257,15 @@ export default function ProjectForm() {
       });
       setExistingProjects(projectsData);
       setIsNewProject(true);
+    // FIX: The type guard `axios.isAxiosError` was not correctly narrowing the type of `err` from `unknown`, causing a compile error when trying to access `err.response` and `err.message`. The updated catch block handles errors more robustly.
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
+        // By casting `err` to `any`, we can safely access its properties without TypeScript errors,
+        // which is necessary if the type guard isn't working as expected in the build environment.
+        const anyErr = err as any;
         openNotification(
           "top",
-          err.response?.data?.error || err.message || "Failed to save project",
+          (anyErr.response?.data as { error?: string })?.error || anyErr.message || "Failed to save project",
           "Error",
           "error"
         );
@@ -302,7 +309,7 @@ export default function ProjectForm() {
                   if (val === "new") {
                     setIsNewProject(true);
                     reset({ chooseProject: "new" });
-                  } else {
+                  } else if (val) {
                     setIsNewProject(false);
                     if (existingProjects[val]) {
                       reset(existingProjects[val]);
@@ -311,12 +318,15 @@ export default function ProjectForm() {
                 }}
               >
                 <Option value="new">+ Create Project</Option>
-                {Object.keys(existingProjects).map((key) => (
-                  <Option key={key} value={key}>
-                    {existingProjects[key].projectCode} -{" "}
-                    {existingProjects[key].description}
-                  </Option>
-                ))}
+                {Object.keys(existingProjects).map((key) => {
+                  const project = existingProjects[key];
+                  if (!project) return null; // Defensive check
+                  return (
+                    <Option key={key} value={key}>
+                      {project.projectCode} - {project.description}
+                    </Option>
+                  );
+                })}
               </Select>
             )}
           />
