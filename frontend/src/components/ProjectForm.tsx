@@ -20,7 +20,8 @@ import { hashPassword } from "../utils/hashpassword";
 import {useNavigate} from "react-router-dom";
 
 const { TextArea } = Input;
-const { Option } = Select;
+// FIX: Removed unused `Option` which was causing errors. The Select component below now uses the `options` prop.
+// const { Option } = Select;
 
 interface ProjectFormValues {
   chooseProject?: string;
@@ -257,20 +258,18 @@ export default function ProjectForm() {
       });
       setExistingProjects(projectsData);
       setIsNewProject(true);
-    // FIX: The type guard `axios.isAxiosError` was not correctly narrowing the type of `err` from `unknown`, causing a compile error when trying to access `err.response` and `err.message`. The updated catch block handles errors more robustly.
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        // By casting `err` to `any`, we can safely access its properties without TypeScript errors,
-        // which is necessary if the type guard isn't working as expected in the build environment.
-        const anyErr = err as any;
+      // FIX: Type checker is unable to infer type within catch block. Using `any` as a workaround.
+      const error = err as any;
+      if (axios.isAxiosError(error)) {
         openNotification(
           "top",
-          (anyErr.response?.data as { error?: string })?.error || anyErr.message || "Failed to save project",
+          error.response?.data?.error || error.message || "Failed to save project",
           "Error",
           "error"
         );
       } else if (err instanceof Error) {
-        openNotification("top", err.message, "Error", "error");
+        openNotification("top", error.message, "Error", "error");
       } else {
         openNotification(
           "top",
@@ -309,25 +308,23 @@ export default function ProjectForm() {
                   if (val === "new") {
                     setIsNewProject(true);
                     reset({ chooseProject: "new" });
-                  } else if (val) {
+                  } else {
                     setIsNewProject(false);
                     if (existingProjects[val]) {
                       reset(existingProjects[val]);
                     }
                   }
                 }}
-              >
-                <Option value="new">+ Create Project</Option>
-                {Object.keys(existingProjects).map((key) => {
-                  const project = existingProjects[key];
-                  if (!project) return null; // Defensive check
-                  return (
-                    <Option key={key} value={key}>
-                      {project.projectCode} - {project.description}
-                    </Option>
-                  );
-                })}
-              </Select>
+                // FIX: Use `options` prop for modern Ant Design compatibility and to fix JSX type errors.
+                options={[
+                  { value: "new", label: "+ Create Project" },
+                  ...Object.keys(existingProjects).map((key) => ({
+                    key,
+                    value: key,
+                    label: `${existingProjects[key].projectCode} - ${existingProjects[key].description}`,
+                  })),
+                ]}
+              />
             )}
           />
         </Form.Item>

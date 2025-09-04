@@ -6,10 +6,7 @@ const { MajorEquipment } = require("../db/db");
 router.post("/", async (req, res) => {
   try {
     const equipment = await MajorEquipment.create(req.body);
-    res.json({
-      id: equipment.id,
-      message: "Equipment created successfully",
-    });
+    res.status(201).json(equipment);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

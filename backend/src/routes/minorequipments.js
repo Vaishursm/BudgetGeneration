@@ -6,10 +6,7 @@ const { MinorEquipment } = require("../db/db");
 router.post("/", async (req, res) => {
   try {
     const equipment = await MinorEquipment.create(req.body);
-    res.json({
-      id: equipment.id,
-      message: "Minor equipment created successfully",
-    });
+    res.status(201).json(equipment);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -62,4 +59,4 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-module.exports = router;    
+module.exports = router;
