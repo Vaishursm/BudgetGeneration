@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -24,6 +25,7 @@ interface Project {
 }
 
 export function ProjectDetailsForm() {
+  const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<string>("")
   const [isNewProject, setIsNewProject] = useState(true)
@@ -31,6 +33,7 @@ export function ProjectDetailsForm() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [passwordDialogMode, setPasswordDialogMode] = useState<"create" | "load">("create")
   const { toast } = useToast()
 
   const [formData, setFormData] = useState({
@@ -78,12 +81,12 @@ export function ProjectDetailsForm() {
     } else {
       setIsNewProject(false)
       setSelectedProject(projectId)
-      // Show password dialog for existing project
+      setPasswordDialogMode("load")
       setShowPasswordDialog(true)
     }
   }
 
-  const handlePasswordSubmit = async () => {
+  const handleLoadProject = async () => {
     if (!selectedProject) return
 
     try {
@@ -112,6 +115,7 @@ export function ProjectDetailsForm() {
           title: "Project Loaded",
           description: "Project details have been loaded successfully.",
         })
+        router.push("/main-interface")
       } else {
         toast({
           title: "Invalid Password",
@@ -165,6 +169,7 @@ export function ProjectDetailsForm() {
       return
     }
 
+    setPasswordDialogMode(isNewProject ? "create" : "load")
     setShowPasswordDialog(true)
   }
 
@@ -198,7 +203,7 @@ export function ProjectDetailsForm() {
         setPassword("")
         setConfirmPassword("")
         loadProjects()
-        // Here you would navigate to the main interface screen
+        router.push("/main-interface")
       } else {
         const error = await response.json()
         toast({
@@ -357,7 +362,9 @@ export function ProjectDetailsForm() {
         <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{isNewProject ? "Create Project Password" : "Enter Project Password"}</DialogTitle>
+              <DialogTitle>
+                {passwordDialogMode === "load" ? "Enter Project Password" : "Create Project Password"}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -370,7 +377,7 @@ export function ProjectDetailsForm() {
                   placeholder="Enter password"
                 />
               </div>
-              {isNewProject && (
+              {passwordDialogMode === "create" && (
                 <div className="space-y-2">
                   <Label htmlFor="confirm_password">Confirm Password</Label>
                   <Input
@@ -386,8 +393,11 @@ export function ProjectDetailsForm() {
                 <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
                   Cancel
                 </Button>
-                <Button onClick={isNewProject ? handleCreateProject : handlePasswordSubmit} disabled={isLoading}>
-                  {isLoading ? "Processing..." : isNewProject ? "Create Project" : "Load Project"}
+                <Button
+                  onClick={passwordDialogMode === "load" ? handleLoadProject : handleCreateProject}
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Processing..." : passwordDialogMode === "load" ? "Load Project" : "Create Project"}
                 </Button>
               </div>
             </div>
