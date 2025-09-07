@@ -327,6 +327,11 @@ export default function ProjectForm() {
   };
 
   const onSubmit: SubmitHandler<ProjectFormValues> = async (data) => {
+    // If an existing project is selected, just proceed to main page without password
+    if (!isNewProject) {
+      navigate("/mainpage");
+      return;
+    }
     setPendingData(data);
     setPasswordModalOpen(true); // 🔹 ask for password first
   };
