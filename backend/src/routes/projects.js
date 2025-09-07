@@ -9,22 +9,21 @@ const { Project } = require("../db/db");
 // ✅ Create new project
 router.post("/", async (req, res) => {
   try {
-    const { password, projectCode, filePath: _ignoredFilePath, ...rest } = req.body;
+    const { password, projectCode, /* ignore client-provided filePath */ ...rest } = req.body;
 
     // ✅ Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ Always generate filePath (ignore incoming)
-    const fileName = `${projectCode}.xlsx`;
-    const filePath = path.join(__dirname, "../exports", fileName);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    // ✅ Always save into exports as xlsx (ExcelJS writes xlsx only)
+    const resolvedFilePath = path.join(__dirname, "../exports", `${projectCode}.xlsx`);
+    fs.mkdirSync(path.dirname(resolvedFilePath), { recursive: true });
 
     // ✅ Save project
     const project = await Project.create({
       projectCode,
       ...rest,
       password: hashedPassword,
-      filePath,
+      filePath: resolvedFilePath,
     });
 
     // ✅ Generate Excel dynamically
@@ -40,12 +39,15 @@ router.post("/", async (req, res) => {
       sheet.addRow({ field, value });
     });
 
-    await workbook.xlsx.writeFile(filePath);
+    await workbook.xlsx.writeFile(resolvedFilePath);
 
+    const fileNamePublic = path.basename(resolvedFilePath);
     res.json({
       id: project.id,
       message: "Project created successfully & Excel generated",
-      filePath,
+      filePath: resolvedFilePath,
+      downloadUrl: `/exports/${fileNamePublic}`,
+      fileName: fileNamePublic,
     });
   } catch (err) {
     if (err.name === "SequelizeUniqueConstraintError") {
@@ -79,7 +81,7 @@ router.get("/:id", async (req, res) => {
 // ✅ Update project (requires password, regenerates filePath)
 router.put("/:id", async (req, res) => {
   try {
-    const { password, projectCode, filePath: _ignoredFilePath, ...updates } = req.body;
+    const { password, projectCode, /* ignore client-provided filePath */ ...updates } = req.body;
     const project = await Project.findByPk(req.params.id);
 
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -87,17 +89,22 @@ router.put("/:id", async (req, res) => {
     const match = await bcrypt.compare(password, project.password);
     if (!match) return res.status(403).json({ error: "Invalid password" });
 
-    // ✅ Recalculate filePath on update
-    const fileName = `${projectCode || project.projectCode}.xlsx`;
-    const filePath = path.join(__dirname, "../exports", fileName);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    // ✅ Keep existing export file path or recalc in exports folder
+    const resolvedFilePath = project.filePath || path.join(__dirname, "../exports", `${projectCode || project.projectCode}.xlsx`);
+    fs.mkdirSync(path.dirname(resolvedFilePath), { recursive: true });
 
     await project.update({
       ...updates,
-      filePath,
+      filePath: resolvedFilePath,
     });
 
-    res.json({ message: "Project updated successfully", filePath });
+    const fileNamePublic = path.basename(resolvedFilePath);
+    res.json({
+      message: "Project updated successfully",
+      filePath: resolvedFilePath,
+      downloadUrl: `/exports/${fileNamePublic}`,
+      fileName: fileNamePublic,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

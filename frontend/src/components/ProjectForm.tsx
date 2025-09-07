@@ -83,7 +83,7 @@ const schema: yup.ObjectSchema<ProjectFormValues> = yup.object().shape({
   filePath: yup
     .string()
     .required("Workbook path is required")
-    .matches(/\.(xlsx|xls)$/, "Must be .xlsx or .xls file"),
+    .matches(/\.xlsx$/, "Must end with .xlsx"),
 });
 
 export default function ProjectForm() {
@@ -91,6 +91,7 @@ export default function ProjectForm() {
   const [existingProjects, setExistingProjects] = useState<
     Record<string, ProjectFormValues>
   >({});
+  const [selectedDirHandle, setSelectedDirHandle] = useState<any>(null);
   const [api, contextHolder] = notification.useNotification();
   const [isPasswordModalOpen, setPasswordModalOpen] = useState(false);
   const [modalPassword, setModalPassword] = useState("");
@@ -203,12 +204,33 @@ export default function ProjectForm() {
     try {
       if (isNewProject) {
         // POST request to create a new project
-        await axios.post("http://localhost:5000/projects", {
+        const res = await axios.post("http://localhost:5000/projects", {
           ...pendingData,
           password: hashed, // ✅ include password
           startDate: pendingData.startDate?.toISOString(),
           endDate: pendingData.endDate?.toISOString(),
         });
+        // Try browser save if directory handle is available
+        try {
+          const downloadUrl = res.data?.downloadUrl;
+          let fileName = res.data?.fileName || "workbook.xlsx";
+          if (selectedDirHandle && pendingData.filePath) {
+            const parts = pendingData.filePath.split(/[\\/]/);
+            const last = parts[parts.length - 1];
+            const ensured = /\.xlsx$/i.test(last) ? last : `${last}.xlsx`;
+            fileName = ensured;
+          }
+          if (downloadUrl && selectedDirHandle) {
+            const fileResponse = await fetch(`http://localhost:5000${downloadUrl}`);
+            const blob = await fileResponse.blob();
+            const fileHandle = await selectedDirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          }
+        } catch (_e) {
+          // ignore browser save errors
+        }
         openNotification(
           "top",
           "Project created successfully!",
@@ -221,12 +243,30 @@ export default function ProjectForm() {
       } else {
         // PUT request to update existing project
         const projectId = pendingData.chooseProject?.replace("project", "");
-        await axios.put(`http://localhost:5000/projects/${projectId}`, {
+        const res = await axios.put(`http://localhost:5000/projects/${projectId}`, {
           ...pendingData,
           password: hashed, // ✅ include password
           startDate: pendingData.startDate?.toISOString(),
           endDate: pendingData.endDate?.toISOString(),
         });
+        try {
+          const downloadUrl = res.data?.downloadUrl;
+          let fileName = res.data?.fileName || "workbook.xlsx";
+          if (selectedDirHandle && pendingData.filePath) {
+            const parts = pendingData.filePath.split(/[\\/]/);
+            const last = parts[parts.length - 1];
+            const ensured = /\.xlsx$/i.test(last) ? last : `${last}.xlsx`;
+            fileName = ensured;
+          }
+          if (downloadUrl && selectedDirHandle) {
+            const fileResponse = await fetch(`http://localhost:5000${downloadUrl}`);
+            const blob = await fileResponse.blob();
+            const fileHandle = await selectedDirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+          }
+        } catch (_e) {}
         openNotification(
           "top",
           "Project updated successfully!",
@@ -290,6 +330,11 @@ export default function ProjectForm() {
     setPendingData(data);
     setPasswordModalOpen(true); // 🔹 ask for password first
   };
+
+  // After password confirm succeeds, we already call POST/PUT. For browser flow, try saving download to chosen folder
+  useEffect(() => {
+    // No-op here; we'll handle after POST/PUT resolution in handlePasswordConfirm
+  }, []);
 
   return (
     <div className="project-card">
@@ -558,18 +603,21 @@ export default function ProjectForm() {
                   <Input
                     disabled={!isNewProject}
                     type="text"
-                    placeholder="C:/path/to/workbook.xlsx"
+                    placeholder="Enter file name (e.g., myfile.xlsx)"
                     {...field}
                     onBlur={(e) => {
                       field.onBlur();
                       const value = e.target.value;
-                      if (value && !/\.(xlsx|xls)$/i.test(value)) {
+                      if (value && !/\.xlsx$/i.test(value)) {
                         message.error(
-                          "Please enter a valid Excel file name (.xlsx or .xls)"
+                          "Please enter a valid Excel file name (.xlsx)"
                         );
                       }
                     }}
                   />
+                  {selectedDirHandle && (
+                    <p style={{ margin: "4px 0" }}>Folder selected (browser): ready to save chosen filename there.</p>
+                  )}
                   <p style={{ color: "red" }}>{errors.filePath?.message}</p>
                 </div>
 
@@ -580,18 +628,55 @@ export default function ProjectForm() {
                   className="browse-btn"
                   onClick={async () => {
                     try {
-                      // ask main to show save dialog so user can pick exact file like D:/abc/test.xlsx
-                      const picked = await window.electronAPI.saveFileDialog({
-                        defaultPath: "workbook.xlsx",
-                      });
-                      if (picked) {
-                        field.onChange(picked);
-                        openNotification(
-                          "top",
-                          "File selected: " + picked,
-                          "Success",
-                          "success"
-                        );
+                      const api: any = (window as any).electronAPI;
+                      if (api?.selectDirectory) {
+                        // Select a directory and prefill the input with its path
+                        const dir = await api.selectDirectory();
+                        if (dir) {
+                          const hasBackslash = dir.includes("\\");
+                          const sep = hasBackslash ? "\\" : "/";
+                          const endsWithSep = dir.endsWith("/") || dir.endsWith("\\");
+                          const base = endsWithSep ? dir : dir + sep;
+                          const current = field.value || "";
+                          const nextValue = current && current.startsWith(dir) ? current : base;
+                          field.onChange(nextValue);
+                          openNotification(
+                            "top",
+                            "Directory selected: " + dir + ". Now enter file name (e.g., myfile.xlsx).",
+                            "Success",
+                            "success"
+                          );
+                        }
+                      } else if (api?.saveFileDialog) {
+                        // Fallback: allow user to pick an exact file via save dialog
+                        const picked = await api.saveFileDialog({ defaultPath: "workbook.xlsx" });
+                        if (picked) {
+                          field.onChange(picked);
+                          openNotification(
+                            "top",
+                            "File selected: " + picked,
+                            "Success",
+                            "success"
+                          );
+                        }
+                      } else if ((window as any).showDirectoryPicker) {
+                        try {
+                          // Browser File System Access API
+                          const dirHandle = await (window as any).showDirectoryPicker();
+                          setSelectedDirHandle(dirHandle);
+                          // Display a pseudo path using folder name so user can add filename after '/'
+                          field.onChange(`${dirHandle.name}/`);
+                          openNotification(
+                            "top",
+                            "Directory selected. Now enter file name (must end with .xlsx).",
+                            "Success",
+                            "success"
+                          );
+                        } catch (e) {
+                          // user cancelled
+                        }
+                      } else {
+                        message.warning("Your browser doesn't support folder pickers. Please type a full path ending with .xlsx or .xls.");
                       }
                     } catch (error) {
                       console.error(error);

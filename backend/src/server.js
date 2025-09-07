@@ -1,6 +1,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
+const path = require("path");
 const { initializeDatabase } = require("./db/db");
 const {seedData} = require("./db/seed");
 
@@ -16,6 +17,9 @@ const minorEquipments = require("./routes/minorequipments");
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+
+// ✅ Serve generated Excel files
+app.use("/exports", express.static(path.join(__dirname, "exports")));
 
 // ✅ Mount routes
 app.use("/projects", projectRoutes);

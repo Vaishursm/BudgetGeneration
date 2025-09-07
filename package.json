@@ -7,15 +7,16 @@
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "cd frontend && npm run start",
     "backend": "cd backend && npm run start",
-    "electron:dev": "wait-on http://localhost:3000 && electron .",
-    "build:frontend": "cd frontend && npm run build && cp -r frontend/dist ../frontend-build",
+    "electron:dev": "cross-env ELECTRON_DEV=1 wait-on http://localhost:5173 && electron . --disable-gpu",
+    "build:frontend": "cd frontend && npm run build && node ../scripts/copy-frontend.js",
     "dist": "npm run build:frontend && electron-builder"
   },
   "devDependencies": {
     "electron": "^27.0.0",
     "electron-builder": "^24.0.0",
     "concurrently": "^7.0.0",
-    "wait-on": "^6.0.0"
+    "wait-on": "^6.0.0",
+    "cross-env": "^7.0.3"
   },
   "build": {
     "appId": "com.example.budget",
